@@ -1,0 +1,10 @@
+[package]
+authors = ["Lexi Frydl <me@lexifry.com>"]
+edition = "2018"
+name = "delivery_cli"
+version = "0.3.0"
+
+[dependencies]
+async-std = "1.2"
+delivery = { path = "../delivery" }
+structopt = "0.3"
