@@ -8,7 +8,7 @@ use std::hash::Hasher as _;
 /// The hash is returned as a URL-safe base64-encoded string
 pub async fn hash(path: impl AsRef<Path>) -> io::Result<String> {
   // Open file and read metadata.
-  let mut file = fs::File::open(path).await?;
+  let mut file = fs::File::open(path.as_ref()).await?;
   let metadata = file.metadata().await?;
 
   if !metadata.is_file() {
