@@ -5,48 +5,15 @@ use digest::Digest as _;
 use std::hash::Hasher as _;
 use std::thread;
 
-/// Computes the content hash of the file at the given path
-///
-/// The hash is returned as a URL-safe base64-encoded string
-pub fn hash(path: impl AsRef<Path>) -> io::Result<String> {
-  // Open file and read metadata.
-  let mut file = fs::File::open(path.as_ref())?;
-  let metadata = file.metadata()?;
+#[derive(Clone, Deref, AsRef, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Display)]
+pub struct Hash(String);
 
-  if !metadata.is_file() {
-    return Err(io::Error::new(io::ErrorKind::InvalidInput, "Not a file."));
-  }
-
-  // Use meowhash on large files and seahash on small files.
-  let mut hasher = if metadata.len() > 1024 {
-    Hash::Meow(default())
-  } else {
-    Hash::Sea(default())
-  };
-
-  // Write file contents to hasher.
-  let mut buffer = [0u8; 1024];
-
-  loop {
-    use io::Read;
-
-    let n = file.read(&mut buffer)?;
-
-    if n == 0 {
-      break;
-    }
-
-    hasher.write(&mut buffer[0..n]);
-  }
-
-  // Compute encoded hash.
-  Ok(hasher.finish())
-}
+pub type Result = io::Result<Hash>;
 
 /// Asynchronously computes the content hash of files using a worker thread.
 #[derive(Clone)]
 pub struct AsyncHasher {
-  request_sender: sync::Sender<(PathBuf, sync::Sender<io::Result<String>>)>,
+  request_sender: sync::Sender<(PathBuf, sync::Sender<Result>)>,
 }
 
 impl Default for AsyncHasher {
@@ -72,9 +39,7 @@ impl AsyncHasher {
   }
 
   /// Compute the content hash of the file at the given path.
-  ///
-  /// The hash is returned as a URL-safe base64-encoded string
-  pub async fn hash(&mut self, path: impl Into<PathBuf>) -> io::Result<String> {
+  pub async fn hash(&mut self, path: impl Into<PathBuf>) -> Result {
     let (result_sender, result) = sync::channel(8);
 
     self.request_sender.send((path.into(), result_sender)).await;
@@ -83,13 +48,51 @@ impl AsyncHasher {
   }
 }
 
+/// Computes the content hash of the file at the given path
+///
+/// The hash is returned as a URL-safe base64-encoded string
+pub fn hash(path: impl AsRef<Path>) -> Result {
+  // Open file and read metadata.
+  let mut file = fs::File::open(path.as_ref())?;
+  let metadata = file.metadata()?;
+
+  if !metadata.is_file() {
+    return Err(io::Error::new(io::ErrorKind::InvalidInput, "Not a file."));
+  }
+
+  // Use meowhash on large files and seahash on small files.
+  let mut hasher = if metadata.len() > 1024 {
+    Calculator::Meow(default())
+  } else {
+    Calculator::Sea(default())
+  };
+
+  // Write file contents to hasher.
+  let mut buffer = [0u8; 1024];
+
+  loop {
+    use io::Read;
+
+    let n = file.read(&mut buffer)?;
+
+    if n == 0 {
+      break;
+    }
+
+    hasher.write(&mut buffer[0..n]);
+  }
+
+  // Compute encoded hash.
+  Ok(Hash(hasher.finish()))
+}
+
 /// Either a meowhash or seahash hasher.
-enum Hash {
+enum Calculator {
   Meow(Box<meowhash::MeowHasher>),
   Sea(seahash::SeaHasher),
 }
 
-impl Hash {
+impl Calculator {
   /// Write bytes to the hasher.
   fn write(&mut self, bytes: impl AsRef<[u8]>) {
     match self {
