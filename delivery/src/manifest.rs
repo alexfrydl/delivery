@@ -8,82 +8,84 @@ pub struct Manifest {
 }
 
 /// Map of relative paths to entries.
-type Entries = BTreeMap<PathBuf, Entry>;
+type Entries = BTreeMap<String, Entry>;
 
 // An entry in a package manifest.
 #[derive(Debug)]
 enum Entry {
   /// A directory.
-  Directory,
+  Directory(Entries),
   /// A file identified by a hash of its contents.
   File(String),
 }
 
 /// Compiles a manifest of a directory.
 pub async fn compile(path: impl AsRef<Path>) -> io::Result<Manifest> {
-  let path = path.as_ref();
-  let mut entries = default();
-
-  compile_into(&path, &path, &mut entries).await?;
+  let mut hasher = hash::AsyncHasher::new();
+  let entries = compile_entries(path.as_ref(), &mut hasher).await?;
 
   Ok(Manifest { entries })
 }
 
 /// Creates manifest entries for the contents of a directory and its
 /// subdirectories.
-fn compile_into<'a>(
+fn compile_entries<'a>(
   root_path: &'a Path,
-  path: &'a Path,
-  entries: &'a mut Entries,
-) -> Pin<Box<dyn Future<Output = io::Result<()>> + 'a>> {
+  hasher: &'a mut hash::AsyncHasher,
+) -> Pin<Box<dyn Future<Output = io::Result<Entries>> + 'a>> {
   Box::pin(async move {
-    let mut fs_entries = fs::read_dir(path).await?;
+    let mut entries = Entries::default();
 
-    while let Some(fs_entry) = fs_entries.next().await {
+    for fs_entry in fs::read_dir(root_path)? {
       let fs_entry = fs_entry?;
-      let file_type = fs_entry.file_type().await?;
-
-      if file_type.is_symlink() {
-        continue;
-      }
+      let file_type = fs_entry.file_type()?;
 
       let path = fs_entry.path();
-      let relative_path = path.strip_prefix(root_path).unwrap().into();
+
+      let name = match path.file_name().and_then(std::ffi::OsStr::to_str) {
+        Some(n) => n.to_owned(),
+        None => continue,
+      };
 
       if file_type.is_file() {
-        entries.insert(relative_path, Entry::File(hash(path).await?));
-      } else {
-        entries.insert(relative_path, Entry::Directory);
-
-        compile_into(root_path, path.as_ref(), entries).await?;
+        entries.insert(name, Entry::File(hasher.hash(path).await?));
+      } else if file_type.is_dir() {
+        entries.insert(
+          name,
+          Entry::Directory(compile_entries(&path, hasher).await?),
+        );
       }
     }
 
-    Ok(())
+    Ok(entries)
   })
 }
 
 // Implement `fmt::Display` for serializing the manifest.
-//
-// Use the alternate format flag (`#`) for pretty formatting.
 impl fmt::Display for Manifest {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    if f.alternate() {
-      write!(f, "{:>48} 1", "version")?;
+    write!(f, "version 1")?;
 
-      for (path, entry) in &self.entries {
-        match entry {
-          Entry::File(hash) => write!(f, "\n{:>48} {}", hash, path.display())?,
-          Entry::Directory => write!(f, "\n{:>48} {}/", "", path.display())?,
-        }
-      }
-    } else {
-      write!(f, "version 1")?;
+    let mut entries_stack: Vec<_> = self
+      .entries
+      .iter()
+      .rev()
+      .map(|(name, entry)| (PathBuf::from(name), entry))
+      .collect();
 
-      for (path, entry) in &self.entries {
-        match entry {
-          Entry::File(hash) => write!(f, "\n{} {}", hash, path.display())?,
-          Entry::Directory => write!(f, "\n{}/", path.display())?,
+    while let Some((path, entry)) = entries_stack.pop() {
+      match entry {
+        Entry::File(hash) => write!(f, "\n{} {}", path.display(), hash)?,
+
+        Entry::Directory(entries) if entries.is_empty() => write!(f, "\n{}/", path.display())?,
+
+        Entry::Directory(entries) => {
+          entries_stack.extend(
+            entries
+              .iter()
+              .rev()
+              .map(|(name, entry)| (path.join(name), entry)),
+          );
         }
       }
     }

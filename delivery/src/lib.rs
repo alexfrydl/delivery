@@ -1,13 +1,10 @@
+pub mod hash;
 pub mod manifest;
 
-mod hash;
-
-use async_std::io::prelude::*;
-use async_std::prelude::*;
-use async_std::{fs, io};
-use std::fmt;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::{fmt, fs, io};
 
 pub use self::hash::hash;
 pub use self::manifest::Manifest;

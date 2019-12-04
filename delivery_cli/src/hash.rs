@@ -8,8 +8,10 @@ pub struct Command {
 
 impl Command {
   pub async fn run(self) {
+    let mut hasher = delivery::hash::AsyncHasher::new();
+
     for file in self.files {
-      match delivery::hash(&file).await {
+      match hasher.hash(&file).await {
         Ok(hash) => println!("{}", hash),
         Err(err) => eprintln!("Failed to compute hash of file {:?}. {}", file, err),
       }

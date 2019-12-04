@@ -1,7 +1,6 @@
 mod compile_manifest;
 mod hash;
 
-use async_std::task;
 use std::path::PathBuf;
 use std::process::exit;
 use structopt::*;
@@ -15,7 +14,7 @@ pub enum Command {
 }
 
 pub fn main() {
-  task::block_on(async {
+  futures::executor::block_on(async {
     let command = Command::from_args();
 
     match command {
