@@ -55,10 +55,10 @@ fn diff_entries(
       }
 
       (Entry::Directory(_), Some(Entry::File(after_hash))) => {
-        changes.push(Change::CreateFile(
-          path_stack.join(name),
-          after_hash.clone(),
-        ));
+        let path = path_stack.join(name);
+
+        changes.push(Change::RemoveDirectory(path.clone()));
+        changes.push(Change::CreateFile(path, after_hash.clone()));
       }
 
       (Entry::Directory(_), None) => {
