@@ -16,7 +16,7 @@ pub enum Entry {
   /// A directory.
   Directory(Entries),
   /// A file identified by a hash of its contents.
-  File(Hash),
+  File { size: u64, hash: Hash },
 }
 
 /// Compiles a manifest of a directory.
@@ -38,7 +38,7 @@ fn compile_entries<'a>(
 
     for fs_entry in fs::read_dir(root_path)? {
       let fs_entry = fs_entry?;
-      let file_type = fs_entry.file_type()?;
+      let metadata = fs_entry.metadata()?;
 
       let path = fs_entry.path();
 
@@ -47,9 +47,15 @@ fn compile_entries<'a>(
         None => continue,
       };
 
-      if file_type.is_file() {
-        entries.insert(name, Entry::File(hasher.hash(path).await?));
-      } else if file_type.is_dir() {
+      if metadata.is_file() {
+        entries.insert(
+          name,
+          Entry::File {
+            size: metadata.len(),
+            hash: hasher.hash(path).await?,
+          },
+        );
+      } else if metadata.is_dir() {
         entries.insert(
           name,
           Entry::Directory(compile_entries(&path, hasher).await?),
@@ -75,7 +81,7 @@ impl fmt::Display for Manifest {
 
     while let Some((path, entry)) = entries_stack.pop() {
       match entry {
-        Entry::File(hash) => write!(f, "\n{} {}", path.display(), hash)?,
+        Entry::File { hash, size } => write!(f, "\n{} {} {}", path.display(), size, hash)?,
 
         Entry::Directory(entries) if entries.is_empty() => write!(f, "\n{}/", path.display())?,
 

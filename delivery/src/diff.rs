@@ -41,7 +41,12 @@ fn diff_entries(
         path_stack.pop();
       }
 
-      (Entry::Directory(_), Some(Entry::File(after_hash))) => {
+      (
+        Entry::Directory(_),
+        Some(Entry::File {
+          hash: after_hash, ..
+        }),
+      ) => {
         let path = path_stack.join(name);
 
         changes.push(Change::RemoveDirectory(path.clone()));
@@ -52,7 +57,7 @@ fn diff_entries(
         changes.push(Change::RemoveDirectory(path_stack.join(name)));
       }
 
-      (Entry::File(_), Some(Entry::Directory(after_entries))) => {
+      (Entry::File { .. }, Some(Entry::Directory(after_entries))) => {
         path_stack.push(name);
         changes.push(Change::RemoveFile(path_stack.clone()));
         changes.push(Change::CreateDirectory(path_stack.clone()));
@@ -60,7 +65,14 @@ fn diff_entries(
         path_stack.pop();
       }
 
-      (Entry::File(before_hash), Some(Entry::File(after_hash))) => {
+      (
+        Entry::File {
+          hash: before_hash, ..
+        },
+        Some(Entry::File {
+          hash: after_hash, ..
+        }),
+      ) => {
         if after_hash != before_hash {
           changes.push(Change::CreateFile(
             path_stack.join(name),
@@ -69,7 +81,7 @@ fn diff_entries(
         }
       }
 
-      (Entry::File(_), None) => {
+      (Entry::File { .. }, None) => {
         changes.push(Change::RemoveFile(path_stack.join(name)));
       }
     }
@@ -84,7 +96,12 @@ fn diff_entries(
         path_stack.pop();
       }
 
-      (None, Entry::File(after_hash)) => {
+      (
+        None,
+        Entry::File {
+          hash: after_hash, ..
+        },
+      ) => {
         changes.push(Change::CreateFile(
           path_stack.join(name),
           after_hash.clone(),
