@@ -1,3 +1,4 @@
+pub mod diff;
 pub mod hash;
 pub mod manifest;
 
@@ -7,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::{fmt, fs, io};
 
+pub use self::diff::diff;
 pub use self::hash::{hash, Hash};
 pub use self::manifest::Manifest;
 
